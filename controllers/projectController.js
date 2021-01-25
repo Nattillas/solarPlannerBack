@@ -84,7 +84,7 @@ exports.create = async (req, res) => {
     sunset = moment(new Date(sunset)).tz(timezone).hours();
     axios.get("https://api.solcast.com.au//world_pv_power/forecasts?latitude=" + Number(center.latitude) + "&longitude=" + Number(center.longitude) + "&capacity="+Number(panel.capacity*req.body.panelNumber)+"&hours=168&api_key=6OxRaAVQFrzoHSQPLdq85RJpVxCHS6Ll&format=json")
      .then(function (response) {
-        console.log('fbeam');
+        console.log('projectController');
         let today = new Date();
         let today_here = moment(today).tz(timezone).date();
         let pv_per_day = 0;
@@ -183,15 +183,15 @@ exports.create = async (req, res) => {
 
     c.save((err, doc) => {
         if(err){
-            console.log(err);
+            console.log('projectController save error', err);
             return res.status(503).send(err);
         }
         else
         {
-            console.log('mshet lhouni')
+            console.log('projectController save')
             res.status(200).send(doc)
             midnight = 0-1+offset/60;
-            console.log(midnight);
+            console.log('projectController save midnight', midnight);
 
         schedule.scheduleJob('47 '+3+' * * *', function()
         {
@@ -201,14 +201,14 @@ exports.create = async (req, res) => {
     })
 
     }).catch(function (error) {
-        console.log(error);
+        console.log('projectController error1', error);
       });
     }).catch(function (error) {
-        console.log(error);
+        console.log('projectController error2', error);
       });
     })
     }).catch(function (error) {
-        console.log(error);
+        console.log('projectController error3', error);
       });
     }
     
@@ -273,7 +273,7 @@ exports.optimalConfig = async(req,res) => {
     rawSpacing = Math.abs(rawSpacing).toFixed(2);    
 
     //loop on the raws
-    for(i=bounds.maxLat;i>bounds.minLat;i=geolib.computeDestinationPoint({ latitude: i, longitude: bounds.minLng }, panel.height/100+rawSpacing/100, 180).latitude)
+    for(i=bounds.maxLat; i>bounds.minLat; i=geolib.computeDestinationPoint({ latitude: i, longitude: bounds.minLng }, panel.height/100+rawSpacing/100, 180).latitude)
     {
      for(j=bounds.minLng;j< bounds.maxLng;j = geolib.computeDestinationPoint({ latitude: i,longitude: j }, panel.width/100, 90).longitude)
 
@@ -367,6 +367,9 @@ exports.project_details = function(req,res)
         if (err) return res.status(500).send(err);
         else
         {
+
+            console.log("project_details", p);
+
             var sunrise = SunCalc.getTimes(new Date(), p.lat,p.lon,0).sunrise;
             sunrise = moment(new Date(sunrise)).tz(p.timezone);
             sunrise = sunrise.hours()+':'+sunrise.minutes();
@@ -376,7 +379,169 @@ exports.project_details = function(req,res)
             var solarnoon = SunCalc.getTimes(new Date(), p.lat,p.lon,0).solarNoon;
             solarnoon = moment(new Date(solarnoon)).tz(p.timezone);
             solarnoon = solarnoon.hours()+':'+solarnoon.minutes();
-            res.status(200).send({'project':p,'sunrise':sunrise, 'solarnoon':solarnoon,'sunset':sunset});
+            
+            // Recalcular de nuevo los datos
+                
+            //Array containing the angles of the area
+            var area = [],
+            //Internet code of the country
+            country_code='',
+            //Timezone of the area
+            timezone = '',
+            //Currency of the country
+            currency='',
+            //Average price of a kw of electrecity
+            price='',
+            forecastsByday = [],
+            pv_today=[],
+            estimationsByday = [],
+            sunrise,
+            sunset,
+            pv_prod = 0;
+
+            var url;
+
+            //loop to fill area with the data from the request
+            for (let i = 0; i < p.area.length; i++) {
+                let y = Number(p.area[i].lat),
+                    x = Number(p.area[i].lon);
+                area.push({ latitude: y, longitude: x });
+            }
+            //condition to verify if there are more than 2 points so we get a polygon area
+            if(area[2]!=null)
+            {
+                //get the country internet code
+                country_code = getCode(p.country);
+                //get the timezone of the area
+                timezone = geoTz(p.lat, p.lon)[0];
+
+                console.log("country_code", country_code)
+
+                currency = p.currency;
+                price = p.price;
+                offset = moment().tz(timezone).utcOffset();
+                sunrise = SunCalc.getTimes(new Date(), p.lat,p.lon,0).sunrise;
+                sunset = SunCalc.getTimes(new Date(), p.lat,p.lon,0).sunset;
+                sunrise = moment(new Date(sunrise)).tz(timezone).hours();
+                sunset = moment(new Date(sunset)).tz(timezone).hours();
+
+                sunrise = ""+sunrise;
+                solarnoon = ""+solarnoon;
+                sunset = ""+sunset;
+
+                console.log(sunrise);
+                console.log(solarnoon);
+                console.log(sunset);
+
+                url = 'https://www.globalpetrolprices.com/api_gpp_el.php?uid=2070&ind=elhh&cnt='+country_code+'&prd=latest&uidc=c5f4e32c848cf03b3219ec7078b586ed';
+                //console.log("globalpetrolprices", url);
+                axios.get(url)
+                .then(function (response) {
+                    parseString(response.data, function (err, result) {
+                        if(result['gpp:data']['gpp:element'][0]['gpp:currency']) { 
+                            currency = result['gpp:data']['gpp:element'][0]['gpp:currency'][0] ;
+                            price = Number(result['gpp:data']['gpp:element'][0]['gpp:average'][0]);
+                        } else{
+                            currency= 'none';
+                            price = 0;
+                        }
+
+                        url = "https://api.solcast.com.au//world_pv_power/forecasts?latitude=" + Number(p.lat) + "&longitude=" + Number(p.lon) + "&capacity="+Number(p.panel.capacity*p.panel_number)+"&hours=168&api_key=6OxRaAVQFrzoHSQPLdq85RJpVxCHS6Ll&format=json";
+                        //console.log("forecasts", url);
+                        axios.get(url)
+                        .then(function (response) {
+                            console.log('projectController');
+                            let today = new Date();
+                            let today_here = moment(today).tz(timezone).date();
+                            let pv_per_day = 0;
+                            let date_of_loop = moment(response.data.forecasts[0].period_end);
+                            if(moment(response.data.forecasts[0].period_end).tz(timezone).date() == today_here )
+                            {
+                                date_of_loop = moment(new Date(response.data.forecasts[0].period_end).setDate(new Date(response.data.forecasts[0].period_end).getDate()+1)).tz(timezone).date();
+                            }
+                            for(let i=0;i<response.data.forecasts.length;i++) {
+                                if(moment(response.data.forecasts[i].period_end).tz(timezone).date() == today_here)
+                                {
+                                    for(j=sunrise;j<=sunset;j++) {
+                                        if(moment(response.data.forecasts[i].period_end).tz(timezone).hours()==j)
+                                        {
+                                            pv_prod+=Number(response.data.forecasts[i].pv_estimate);
+                                            pv_today.push({date_time:new Date(response.data.forecasts[i].period_end),pv:Number(response.data.forecasts[i].pv_estimate)});                                  
+                                        }
+                                    }
+                                } else {
+                                    if(moment(response.data.forecasts[i].period_end).tz(timezone).date() == date_of_loop) {
+                                        pv_per_day+=response.data.forecasts[i].pv_estimate;
+                                    } else {
+                                        forecastsByday.push({'date_time':new Date(response.data.forecasts[i].period_end),'pv':pv_per_day});
+                                        pv_per_day = Number(response.data.forecasts[i].pv_estimate);
+                                        date_of_loop = moment(response.data.forecasts[i].period_end).tz(timezone).date();
+                                    }
+                                }
+                            }
+                            pv_per_day = 0;
+                
+                            url = "https://api.solcast.com.au//world_pv_power/estimated_actuals?latitude=" + Number(p.lat) + "&longitude=" + Number(p.lon) + "&capacity="+Number(p.panel.capacity*p.panel_number)+"&hours=168&api_key=6OxRaAVQFrzoHSQPLdq85RJpVxCHS6Ll&format=json";
+                            //console.log("estimated_actuals", url);
+                            axios.get(url)
+                            .then(function (response2) {
+                                if(moment(response2.data.estimated_actuals[0].period_end).tz(timezone).date() == today_here )
+                                {
+                                    date_of_loop = moment(new Date(response2.data.estimated_actuals[0].period_end).setDate(new Date(response2.data.estimated_actuals[0].period_end).getDate()-1)).tz(timezone).date();
+                                }
+                                else
+                                {
+                                    date_of_loop = moment(new Date(response2.data.estimated_actuals[0].period_end)).tz(timezone).date();
+                                }
+                                for(let i=0;i<response2.data.estimated_actuals.length;i++){
+                                    if(moment(response2.data.estimated_actuals[i].period_end).tz(timezone).date() == today_here)
+                                    {
+                                        for(j=sunrise;j<=sunset;j++) {
+                                            if(moment(response2.data.estimated_actuals[i].period_end).tz(timezone).hours()==j)
+                                            {
+                                                pv_today.push({date_time:new Date(response2.data.estimated_actuals[i].period_end),pv:Number(response2.data.estimated_actuals[i].pv_estimate)});
+                                                pv_prod+=Number(response2.data.estimated_actuals[i].pv_estimate);
+                                            }   
+                                        }
+                                    } else {
+                                        if(moment(response2.data.estimated_actuals[i].period_end).tz(timezone).date() == date_of_loop) {
+                                            pv_per_day+=response2.data.estimated_actuals[i].pv_estimate;
+                                        }
+                                        else
+                                        {
+                                            estimationsByday.push({'date_time':new Date(response2.data.estimated_actuals[i-1].period_end),'pv':pv_per_day});
+                                            pv_per_day = Number(response2.data.estimated_actuals[i].pv_estimate);
+                                            date_of_loop = moment(response2.data.estimated_actuals[i].period_end).tz(timezone).date();
+                                        }
+                                    }
+                                }
+
+
+                                // Se cambian los datos de la BD por los calculados
+                                p.prod_today = pv_today;
+                                p.total_prod = pv_prod;
+                                p.next_prod = forecastsByday;
+                                p.previous_prod = estimationsByday;
+                                p.price = price;
+                                p.currency = currency;
+
+                                console.log("Proyecto modificado", p);
+
+                                res.status(200).send({'project':p,'sunrise': sunrise, 'solarnoon': solarnoon,'sunset': sunset});
+                            }).catch(function (error) {
+                                console.log('projectController error estimated_actuals', error);
+                                res.status(200).send({'project':p,'sunrise': sunrise, 'solarnoon': solarnoon,'sunset': sunset, 'error' : 'https://api.solcast.com.au//world_pv_power/estimated_actuals'});
+                            });
+                        }).catch(function (error) {
+                            console.log('projectController error forecasts', error);
+                            res.status(200).send({'project':p,'sunrise': sunrise, 'solarnoon': solarnoon,'sunset': sunset, 'error' : 'https://api.solcast.com.au//world_pv_power/forecasts'});
+                        });
+                    });
+                }).catch(function (error) {
+                    console.log('projectController error globalpetrolprices', error);
+                    res.status(200).send({'project':p,'sunrise': sunrise, 'solarnoon': solarnoon,'sunset': sunset, 'error' : 'https://www.globalpetrolprices.com/api_gpp_el.php'});
+                });
+            }
         }
     })
 };
@@ -533,7 +698,7 @@ function getBoundingRect(data) {
 };
 
 exports.project_plan = function (reqq, res) {
-    console.log('ahala');
+    //console.log('projectController project_plan');
     Project.findById(reqq.params.id).populate('panel').exec((err, p) =>{
         if (err) {return next(err);}
         let req = {'body':{'points':p.area}}
@@ -583,7 +748,7 @@ exports.project_plan = function (reqq, res) {
                                 { latitude: lat1, longitude: lng1 },
                                 { latitude:lat1, longitude: j },
                             ]));
-                            console.log('ahla');
+                            //console.log('projectController loopOfTheRows');
                             cells.push(cell);                          
                         }   
                     }
@@ -591,7 +756,7 @@ exports.project_plan = function (reqq, res) {
             }
         } 
     }
-    console.log(cells.length);
+    console.log('projectController cells.length', cells.length);
 
     let boundingRect = getBoundingRect(req);
     let scale = Math.min(700, 700);
@@ -739,7 +904,7 @@ function update_production_data (p){
     Project.findByIdAndUpdate(p.id, {$set: {prod_today: pv_today,next_prod: forecastsByday,previous_prod: estimationsByday}}, function (err, project) {
         if(err)
         {
-            console.log(err)
+            console.log('projectController findByIdAndUpdate error', err)
         }
     })
 
@@ -752,7 +917,7 @@ exports.admin_all_projects = function(req,res){
     .exec((err,p)=>{
         if(err)
         {
-            console.log(err);
+            console.log('projectController admin_all_projects', err);
             res.status(500).send(err);
         }
         else
@@ -766,7 +931,7 @@ exports.admin_project_delete = function (req, res) {
     
     Project.findByIdAndRemove(req.params.id, function (err) {
         if (err) {
-            console.log(err);
+            console.log('projectController findByIdRemove error', err);
             res.status(500).send(err);
         }
         else{
@@ -781,7 +946,7 @@ exports.admin_dashboard = function (req,res) {
     .exec((err,p)=>{
         if(err)
         {
-            console.log(err);
+            console.log('projectController admin_dashboard', err);
             res.status(500).send(err.message);
         }
         else

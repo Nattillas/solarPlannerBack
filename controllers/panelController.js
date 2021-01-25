@@ -3,7 +3,7 @@ Panel = mongoose.model('Panels');
 
 exports.newPanel = function(req,res,next)
 {
-    console.log('temshy');
+    console.log('panelController newPanel');
     panel = new Panel();
     panel.name = req.body.name;
     panel.capacity = req.body.capacity;
@@ -19,9 +19,11 @@ exports.newPanel = function(req,res,next)
     panel.owner = req._id;
     panel.save((err,doc) => {
         if(err){
+            console.log('newPanel err',err);
             return res.status(500).send(err);
         }
         else{
+            console.log('newPanel doc',doc);
             return res.status(200).send(doc);
         }
     })
@@ -53,7 +55,7 @@ exports.deletePanel = function(req,res,next){
     })
 }
 exports.myPanels = function(req,res){
-    
+    console.log('panelController myPanels');    
     Panel.find({'owner':req._id},(err,docs)=>{
         if(!err){
             return res.status(200).send(docs);

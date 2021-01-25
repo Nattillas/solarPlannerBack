@@ -11,7 +11,7 @@ const mailer = require('../config/email')
 
 exports.register = function(req,res,next)
 {
-  console.log('ahla');
+  console.log('userController register');
         var user = new User();
         user.fullName = req.body.fullName;
         user.local.email = req.body.email;
@@ -95,7 +95,7 @@ exports.usersList = (req, res, next) =>{
 exports.user_delete = function (req, res) {    
     User.deleteOne({'_id':req.params.id}, function (err) {
         if (err){
-          console.log('tehshe');
+          console.log('userController user_delete deleteOne');
           return res.status(403).send(err);}
         else{
             Project.deleteMany({'owner':req.params.id}, (err)=>{
@@ -121,7 +121,7 @@ exports.sendPasswordResetEmail = async (req, res) => {
     } catch (err) {
       res.status(404).json("No user with that email")
     }
-    console.log(user);
+    console.log('userController sendPasswordResetEmail user ', user);
     if(user)
     {const token = user.usePasswordHashToMakeToken();
     const url = mailer.getPasswordResetURL(user, token)
